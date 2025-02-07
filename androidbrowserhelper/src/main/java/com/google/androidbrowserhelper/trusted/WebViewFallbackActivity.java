@@ -25,13 +25,18 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -125,6 +130,7 @@ public class WebViewFallbackActivity extends Activity {
 
         mWebView = new WebView(this);
         mWebView.setWebViewClient(createWebViewClient());
+        mWebView.setWebChromeClient(createWebViewChromeClient());
 
         WebSettings webSettings = mWebView.getSettings();
         setupWebSettings(webSettings);
@@ -132,7 +138,7 @@ public class WebViewFallbackActivity extends Activity {
         ViewGroup.LayoutParams layoutParams = new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
 
-        setContentView(mWebView,layoutParams);
+        setContentView(mWebView, layoutParams);
         if (savedInstanceState != null) {
             mWebView.restoreState(savedInstanceState);
             return;
@@ -179,7 +185,7 @@ public class WebViewFallbackActivity extends Activity {
     }
 
     @Override
-    public void onConfigurationChanged(@NonNull Configuration newConfig){
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
     }
 
@@ -188,7 +194,7 @@ public class WebViewFallbackActivity extends Activity {
             @Override
             public boolean onRenderProcessGone(
                     WebView view, RenderProcessGoneDetail detail) {
-                ViewGroup vg = (ViewGroup)view.getParent();
+                ViewGroup vg = (ViewGroup) view.getParent();
 
                 // Remove crashed WebView from the hierarchy
                 // and ensure it is destroyed.
@@ -258,7 +264,7 @@ public class WebViewFallbackActivity extends Activity {
             }
 
             private boolean matchExtraOrigins(Uri navigationUri) {
-                for (Uri uri: mExtraOrigins) {
+                for (Uri uri : mExtraOrigins) {
                     if (uriOriginsMatch(uri, navigationUri)) {
                         return true;
                     }
@@ -274,11 +280,52 @@ public class WebViewFallbackActivity extends Activity {
         };
     }
 
+    private WebChromeClient createWebViewChromeClient() {
+        return new WebChromeClient() {
+            private View fullScreenView;
+            private int originalOrientation;
+
+            @Override
+            public void onShowCustomView(View paramView, CustomViewCallback paramCustomViewCallback) {
+                // Make sure that we don't have another fullscreen shown already.
+                if (this.fullScreenView != null) {
+                    onHideCustomView();
+                }
+                // Save the fullscreen view in order to be able to remove it later when requested.
+                this.fullScreenView = paramView;
+                // Save the current orientation in order to be able to return the state after
+                // exiting the fullscreen.
+                this.originalOrientation = getRequestedOrientation();
+
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                getWindow().addContentView(this.fullScreenView,
+                        new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+            }
+
+            @Override
+            public void onHideCustomView() {
+                // If we don't have a fullscreen then no-op.
+                if (fullScreenView == null) {
+                    return;
+                }
+
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                ((ViewGroup) fullScreenView.getParent()).removeView(fullScreenView);
+                this.fullScreenView = null;
+                setRequestedOrientation(this.originalOrientation);
+            }
+        };
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private static void setupWebSettings(WebSettings webSettings) {
         // Those settings are disabled by default.
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
         webSettings.setDatabaseEnabled(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            webSettings.setMediaPlaybackRequiresUserGesture(false);
+        }
     }
 }
